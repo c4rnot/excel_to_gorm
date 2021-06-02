@@ -1,4 +1,4 @@
-package csv_to_gorm
+package excel_to_gorm
 
 import (
 	"errors"
