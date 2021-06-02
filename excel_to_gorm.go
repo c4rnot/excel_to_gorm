@@ -39,7 +39,7 @@ func parseTag(field reflect.StructField) (Tag, error) {
 	subTags := strings.Split(value, ",")
 
 	for _, subTag := range subTags {
-		subTagElements := strings.SplitAfter(subTag, ":")
+		subTagElements := strings.Split(subTag, ":")
 		switch subTagElements[0] {
 		case "col":
 			tag.HasColanme = true
@@ -136,7 +136,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 						log.Fatal("Column supplied in map is out of range")
 					}
 					// if a parameter column maps to the field
-					if paramsCol >= 0 {
+					if paramsCol > 0 {
 						cell := r.GetCell(paramsCol - 1)
 						dbRecordPtr.Elem().Field(fldIx).Set(CellToType(cell, fldType))
 					} else {
@@ -221,11 +221,13 @@ func GetHeadings(fileName string, sheetName string) ([]string, error) {
 }
 
 func mapHeadingToCol(r *xlsx.Row) map[string]int {
-	var colMap map[string]int
+	colMap := make(map[string]int, r.Sheet.MaxCol)
+
 	r.ForEachCell(func(c *xlsx.Cell) error {
 		header := c.String()
 		if header != "" {
-			colMap[header] = r.GetCoordinate() + 1
+			ColNo, _ := c.GetCoordinates()
+			colMap[header] = ColNo + 1
 		}
 		return nil
 	})
@@ -237,7 +239,7 @@ func getIntCols(r *xlsx.Row) []string {
 	r.ForEachCell(func(c *xlsx.Cell) error {
 		// converts strings.ParseFloat to int
 		f, err := c.Float()
-		if err != nil {
+		if err == nil {
 			if math.Abs(math.Round(f)-f) < 0.000001 {
 				intCols = append(intCols, c.Value)
 			}
@@ -260,11 +262,14 @@ func GetSheetNames(fileName string) ([]string, error) {
 }
 
 func GetSheetNameMap(fileName string) (map[string]int, error) {
-	sheetMap := make(map[string]int)
+	var sheetMap map[string]int
 	wb, err := xlsx.OpenFile(fileName)
 	if err != nil {
 		return sheetMap, errors.New("could not open file: " + fileName)
 	}
+
+	sheetMap = make(map[string]int, len(wb.Sheets))
+
 	for i, sh := range wb.Sheets {
 		sheetMap[sh.Name] = i
 	}
@@ -307,7 +312,7 @@ func CellToType(c *xlsx.Cell, outType reflect.Type) reflect.Value {
 
 		f, err := c.Float()
 		if err != nil {
-			log.Fatal("CellToType could not convert "+c.Value+" to integer: ", err)
+			log.Fatal("CellToType could not convert "+c.Value+" to float: ", err)
 		}
 
 		resultPtr.Elem().SetFloat(f)
