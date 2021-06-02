@@ -2,6 +2,7 @@ package excel_to_gorm
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"math"
 	"reflect"
@@ -27,13 +28,13 @@ type Params struct {
 	FirstRowHasData bool
 }
 
-func parseTag(field reflect.StructField) Tag {
+func parseTag(field reflect.StructField) (Tag, error) {
 	var tag Tag
 
 	value, ok := field.Tag.Lookup("xtg")
 	if !ok || value == "" {
 		tag.HasTag = false
-		return tag
+		return tag, nil
 	}
 	subTags := strings.Split(value, ",")
 
@@ -42,11 +43,20 @@ func parseTag(field reflect.StructField) Tag {
 		switch subTagElements[0] {
 		case "col":
 			tag.HasColanme = true
+			if len(subTagElements) < 2 {
+				return tag, errors.New("column name missing for field: " + field.Name + ". should be in the form col:<colname>")
+			}
 			tag.Colname = subTagElements[1]
 		case "mapConst":
 			tag.IsMapConst = true
+			if len(subTagElements) < 2 {
+				return tag, errors.New("constant map key is missing for field : " + field.Name + ". should be in the form mapConst:<mapkey>")
+			}
 			tag.ConstMapKey = subTagElements[1]
 		case "intcols":
+			if len(subTagElements) < 2 {
+				return tag, errors.New("whether field is heading or value field : " + field.Name + ". should be in the form intcols:colname or intcols:value")
+			}
 			if strings.ToLower(subTagElements[1]) == "colname" {
 				tag.IsIntColsHead = true
 				tag.IsIntColsValue = false
@@ -56,7 +66,7 @@ func parseTag(field reflect.StructField) Tag {
 			}
 		}
 	}
-	return tag
+	return tag, nil
 }
 
 func ExcelToSlice(fileName string, sheetName string, model interface{}, params Params) (interface{}, error) {
@@ -85,7 +95,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 	}
 	defer sh.Close()
 
-	sh.ForEachRow(func(r *xlsx.Row) error {
+	err = sh.ForEachRow(func(r *xlsx.Row) error {
 
 		// Get headings from first row if necessary
 		if r.GetCoordinate() == 0 {
@@ -95,7 +105,10 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 
 				// check if there is an intcol tag, as a db entry has to be made for each int col
 				for fldIx := 0; fldIx < modelNumFlds; fldIx++ {
-					tag := parseTag(modelTyp.Field(fldIx))
+					tag, err := parseTag(modelTyp.Field(fldIx))
+					if err != nil {
+						return fmt.Errorf("could not parse tag for sheetname:  "+sheetName+". ", err)
+					}
 					if tag.IsIntColsHead || tag.IsIntColsValue {
 						hasIntCols = true
 					}
@@ -115,7 +128,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 					fld := modelTyp.Field(fldIx)
 					fldName := fld.Name
 					fldType := fld.Type
-					tag := parseTag(fld)
+					tag, _ := parseTag(fld)
 
 					paramsCol := params.colMap[fldName]
 					//lclCol := lclColMap
@@ -147,7 +160,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 				fld := modelTyp.Field(fldIx)
 				fldName := fld.Name
 				fldType := fld.Type
-				tag := parseTag(fld)
+				tag, _ := parseTag(fld)
 
 				paramsCol := params.colMap[fldName]
 				//lclCol := lclColMap
@@ -155,7 +168,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 					log.Fatal("Column supplied in map is out of range")
 				}
 				// if a parameter column maps to the field
-				if paramsCol >= 0 {
+				if paramsCol > 0 {
 					cell := r.GetCell(paramsCol - 1)
 					dbRecordPtr.Elem().Field(fldIx).Set(CellToType(cell, fldType))
 				} else {
@@ -175,6 +188,9 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 
 		return nil
 	})
+	if err != nil {
+		return objSlice.Interface(), err
+	}
 
 	return objSlice.Interface(), nil
 }
