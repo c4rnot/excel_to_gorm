@@ -123,6 +123,9 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 
 		if hasIntCols {
 			for _, intColHdg := range intColHdgs {
+				// create the new item to add to the database
+				dbRecordPtr = reflect.New(modelTyp)
+
 				// for each field in the model
 				for fldIx := 0; fldIx < modelNumFlds; fldIx++ {
 					fld := modelTyp.Field(fldIx)
@@ -152,6 +155,9 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 						}
 					}
 				}
+				// add the record to the slice of records
+				// objArry.Index(recordIx).Set(reflect.ValueOf(dbRecordPtr.Elem().Interface()))
+				objSlice = reflect.Append(objSlice, dbRecordPtr.Elem())
 			}
 
 		} else {
@@ -180,11 +186,10 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 					}
 				}
 			}
+			// add the record to the slice of records
+			// objArry.Index(recordIx).Set(reflect.ValueOf(dbRecordPtr.Elem().Interface()))
+			objSlice = reflect.Append(objSlice, dbRecordPtr.Elem())
 		}
-
-		// add the record to the slice of records
-		// objArry.Index(recordIx).Set(reflect.ValueOf(dbRecordPtr.Elem().Interface()))
-		objSlice = reflect.Append(objSlice, dbRecordPtr.Elem())
 
 		return nil
 	})
