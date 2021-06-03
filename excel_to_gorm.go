@@ -325,6 +325,30 @@ func CellToType(c *xlsx.Cell, outType reflect.Type, params Params) reflect.Value
 	case reflect.Float32, reflect.Float64:
 		resultPtr := reflect.New(reflect.Type(outType))
 
+		// Postgres numeric doesnt support inf yet.  Convert to MaxFloat
+		strVal := c.String()
+		if strings.Contains(strVal, "inf") {
+
+			if strings.Contains(strVal, "-") {
+				if outType.Kind() == reflect.Float64 {
+					f := -math.MaxFloat64
+					resultPtr.Elem().SetFloat(f)
+				} else {
+					f := -math.MaxFloat32
+					resultPtr.Elem().SetFloat(f)
+				}
+			} else {
+				if outType.Kind() == reflect.Float64 {
+					f := math.MaxFloat64
+					resultPtr.Elem().SetFloat(f)
+				} else {
+					f := math.MaxFloat32
+					resultPtr.Elem().SetFloat(f)
+				}
+			}
+			return resultPtr.Elem()
+		}
+
 		f, err := c.Float()
 		if err != nil {
 			if params.ErrorOnNaN {
