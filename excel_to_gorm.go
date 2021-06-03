@@ -26,6 +26,8 @@ type Params struct {
 	colMap          map[string]int    // maps fieldnames to column numbers(starting at 1).  Overrides tagnames if mapping present
 	ConstMap        map[string]string // maps from tagname mapConst:Mapfrom to a string constant to be parsed into the field
 	FirstRowHasData bool
+	ErrorOnNaN      bool
+	//ErrorOnInf bool
 }
 
 func parseTag(field reflect.StructField) (Tag, error) {
@@ -141,7 +143,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 					// if a parameter column maps to the field
 					if paramsCol > 0 {
 						cell := r.GetCell(paramsCol - 1)
-						dbRecordPtr.Elem().Field(fldIx).Set(CellToType(cell, fldType))
+						dbRecordPtr.Elem().Field(fldIx).Set(CellToType(cell, fldType, params))
 					} else {
 						switch {
 						case tag.IsMapConst:
@@ -149,9 +151,13 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 						case tag.IsIntColsHead:
 							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(intColHdg, fldType))
 						case tag.IsIntColsValue:
-							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[intColHdg]-1), fldType))
+							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[intColHdg]-1), fldType, params))
 						case tag.HasColanme:
-							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType))
+							if lclColMap[tag.Colname] == 0 {
+								fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sheetName)
+								// TODO - How to handle the error?
+							}
+							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType, params))
 						}
 					}
 				}
@@ -176,13 +182,17 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 				// if a parameter column maps to the field
 				if paramsCol > 0 {
 					cell := r.GetCell(paramsCol - 1)
-					dbRecordPtr.Elem().Field(fldIx).Set(CellToType(cell, fldType))
+					dbRecordPtr.Elem().Field(fldIx).Set(CellToType(cell, fldType, params))
 				} else {
 					switch {
 					case tag.IsMapConst:
 						dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(params.ConstMap[tag.ConstMapKey], fldType))
 					case tag.HasColanme:
-						dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType))
+						if lclColMap[tag.Colname] == 0 {
+							fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sheetName)
+							// TODO - How to handle the error?
+						}
+						dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType, params))
 					}
 				}
 			}
@@ -283,7 +293,7 @@ func GetSheetNameMap(fileName string) (map[string]int, error) {
 
 // takes an excel cell and converts it to a reflect.Value of a given type (supplied as a reflect.Type)
 // used internally, but exposed as it may have uses elsewhere
-func CellToType(c *xlsx.Cell, outType reflect.Type) reflect.Value {
+func CellToType(c *xlsx.Cell, outType reflect.Type, params Params) reflect.Value {
 	var cellString string
 	switch outType.Kind() {
 	case reflect.String:
@@ -317,7 +327,11 @@ func CellToType(c *xlsx.Cell, outType reflect.Type) reflect.Value {
 
 		f, err := c.Float()
 		if err != nil {
-			log.Fatal("CellToType could not convert "+c.Value+" to float: ", err)
+			if params.ErrorOnNaN {
+				log.Fatal("CellToType could not convert "+c.Value+" to float: ", err)
+			}
+			// if it's not a
+			f = math.NaN()
 		}
 
 		resultPtr.Elem().SetFloat(f)
