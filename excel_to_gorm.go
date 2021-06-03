@@ -302,7 +302,13 @@ func CellToType(c *xlsx.Cell, outType reflect.Type, params Params) reflect.Value
 	case reflect.Bool:
 		cellString = c.Value
 		//fmt.Println("Step a: bool")
-		if c.Bool() || strings.ContainsAny(cellString[0:2], "YyTt1") || strings.Contains(strings.ToLower(cellString), "true") || strings.Contains(strings.ToLower(cellString), "yes") {
+		var firstLetter string
+		if len(cellString) < 1 {
+			firstLetter = ""
+		} else {
+			firstLetter = cellString[0:1]
+		}
+		if c.Bool() || strings.ContainsAny(firstLetter, "YyTt1") || strings.Contains(strings.ToLower(cellString), "true") || strings.Contains(strings.ToLower(cellString), "yes") {
 			return reflect.ValueOf(true)
 		} else {
 			return reflect.ValueOf(false)
