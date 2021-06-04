@@ -71,7 +71,39 @@ func parseTag(field reflect.StructField) (Tag, error) {
 	return tag, nil
 }
 
-func ExcelToSlice(fileName string, sheetName string, model interface{}, params Params) (interface{}, error) {
+func ExcelFileToSlice(fileName string, sheetName string, model interface{}, params Params) (interface{}, error) {
+	modelTyp := reflect.ValueOf(model).Elem().Type()
+	objSlice := reflect.Zero(reflect.SliceOf(modelTyp))
+
+	wb, err := xlsx.OpenFile(fileName)
+	if err != nil {
+		return objSlice.Interface(), errors.New("could not open file: " + fileName)
+	}
+	result, err := WorkbookToSlice(wb, sheetName, model, params)
+	return result, err
+}
+
+// allows calling function to keep file open
+// calling function needs to import "github.com/tealeg/xlsx/v3" and pass a pointer to an xlsx.File
+// eg.: wb, err := xlsx.OpenFile(fileName)
+func WorkbookToSlice(wb *xlsx.File, sheetName string, model interface{}, params Params) (interface{}, error) {
+	modelTyp := reflect.ValueOf(model).Elem().Type()
+	objSlice := reflect.Zero(reflect.SliceOf(modelTyp))
+
+	sh, ok := wb.Sheet[sheetName]
+	if !ok {
+		return objSlice.Interface(), errors.New("could not find sheet:  " + sheetName)
+	}
+	defer sh.Close()
+	result, err := WorksheetToSlice(sh, model, params)
+	return result, err
+}
+
+// allows calling function to keep sheet open
+// calling function needs to close the sheet
+// calling function needs to import "github.com/tealeg/xlsx/v3" and pass a pointer to an xlsx.Sheet
+// eg.: sh, ok := wb.Sheet[sheetName]
+func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interface{}, error) {
 
 	// map of column headings to 1 based column numbers (for consistency with csv_to_gorm)
 	var lclColMap map[string]int
@@ -86,18 +118,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 
 	objSlice := reflect.Zero(reflect.SliceOf(modelTyp))
 
-	wb, err := xlsx.OpenFile(fileName)
-	if err != nil {
-		return objSlice.Interface(), errors.New("could not open file: " + fileName)
-	}
-
-	sh, ok := wb.Sheet[sheetName]
-	if !ok {
-		return objSlice.Interface(), errors.New("could not find sheet:  " + sheetName)
-	}
-	defer sh.Close()
-
-	err = sh.ForEachRow(func(r *xlsx.Row) error {
+	err := sh.ForEachRow(func(r *xlsx.Row) error {
 
 		// Get headings from first row if necessary
 		if r.GetCoordinate() == 0 {
@@ -109,7 +130,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 				for fldIx := 0; fldIx < modelNumFlds; fldIx++ {
 					tag, err := parseTag(modelTyp.Field(fldIx))
 					if err != nil {
-						return fmt.Errorf("could not parse tag for sheetname:  "+sheetName+". ", err)
+						return fmt.Errorf("could not parse tag for sheetname:  "+sh.Name+". ", err)
 					}
 					if tag.IsIntColsHead || tag.IsIntColsValue {
 						hasIntCols = true
@@ -154,7 +175,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[intColHdg]-1), fldType, params))
 						case tag.HasColanme:
 							if lclColMap[tag.Colname] == 0 {
-								fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sheetName)
+								fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
 								// TODO - How to handle the error?
 							}
 							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType, params))
@@ -189,7 +210,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 						dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(params.ConstMap[tag.ConstMapKey], fldType))
 					case tag.HasColanme:
 						if lclColMap[tag.Colname] == 0 {
-							fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sheetName)
+							fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
 							// TODO - How to handle the error?
 						}
 						dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType, params))
@@ -208,6 +229,7 @@ func ExcelToSlice(fileName string, sheetName string, model interface{}, params P
 	}
 
 	return objSlice.Interface(), nil
+
 }
 
 // get the first row of a worksheet, whixch is assumed to be the column heading names
