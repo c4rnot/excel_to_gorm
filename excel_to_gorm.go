@@ -168,7 +168,14 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 					} else {
 						switch {
 						case tag.IsMapConst:
-							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(params.ConstMap[tag.ConstMapKey], fldType))
+							constString := params.ConstMap[tag.ConstMapKey]
+							// trying to convert empty strings to numbers in csv_to_gorm will bomb!
+							if constString == "" && fldType.Name() != "string" {
+								return fmt.Errorf("tag constant: " + tag.ConstMapKey + " missing for sheet:  " + sh.Name + ". ")
+							} else {
+								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
+							}
+
 						case tag.IsIntColsHead:
 							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(intColHdg, fldType))
 						case tag.IsIntColsValue:
