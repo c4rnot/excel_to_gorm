@@ -9,7 +9,8 @@ import (
 	"strings"
 
 	"github.com/c4rnot/csv_to_gorm"
-	"github.com/tealeg/xlsx/v3"
+	//"github.com/tealeg/xlsx/v3"
+	"github.com/c4rnot/xlsx/v3"
 )
 
 type Tag struct {
