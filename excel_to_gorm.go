@@ -13,6 +13,23 @@ import (
 	"github.com/c4rnot/xlsx/v3"
 )
 
+/*
+*Instructions:
+* =============
+*
+*  use struct tags to inform xtg how to handle the translation of excel to the variable.
+* xtg tags have teh following form:
+* `xtg:<instruction>:<parameter>,<instruction>:<parameter;parameter;parameter>`
+*
+* mapConst : parameter is the key to the Params constMap.  Value becomes the constant associated with the key
+* col: The column name associated with this field
+* intcols:colname  xtg will parse all columns whose column names  can parse as an integer.  A separate database record is created for each one
+* intcols:value  This field is the value associated with the column headed by an integer.
+* melt:colname  takes all colums not declared with col: and creates a separate record for each
+* melt:value  takes value associated with colums not declared with col:
+* ignore:  takes a ; separated list of strings.  These columns are ignored for melt
+ */
+
 type Tag struct {
 	HasTag         bool
 	HasColanme     bool
@@ -21,6 +38,9 @@ type Tag struct {
 	IsIntColsValue bool
 	IsMapConst     bool
 	ConstMapKey    string
+	IsMeltHead     bool
+	IsMeltValue    bool
+	Ignore         []string
 }
 
 type Params struct {
@@ -67,7 +87,25 @@ func parseTag(field reflect.StructField) (Tag, error) {
 				tag.IsIntColsHead = false
 				tag.IsIntColsValue = true
 			}
+		case "melt":
+			if len(subTagElements) < 2 {
+				return tag, errors.New("whether field is heading or value field : " + field.Name + ". should be in the form melt:colname or melt:value")
+			}
+			if strings.ToLower(subTagElements[1]) == "colname" {
+				tag.IsMeltHead = true
+				tag.IsMeltValue = false
+			} else {
+				tag.IsMeltHead = false
+				tag.IsMeltValue = true
+			}
+		case "ignore":
+			if len(subTagElements) == 1 {
+				continue
+			}
+			ignoreStrings := strings.Split(subTagElements[1], ";")
+			tag.Ignore = ignoreStrings
 		}
+
 	}
 	return tag, nil
 }
@@ -108,8 +146,11 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 
 	// map of column headings to 1 based column numbers (for consistency with csv_to_gorm)
 	var lclColMap map[string]int
-	var intColHdgs []string
 	var hasIntCols bool
+	var intColHdgs []string
+	var hasMelt bool
+	var meltColHdgs []string
+	var ignore []string
 
 	// determine what type of model we are trying to fill records of
 	modelTyp := reflect.ValueOf(model).Elem().Type()
@@ -136,7 +177,17 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 					if tag.IsIntColsHead || tag.IsIntColsValue {
 						hasIntCols = true
 					}
+					if tag.IsMeltHead || tag.IsMeltValue {
+						hasMelt = true
+					}
+					if len(tag.Ignore) > 0 {
+						ignore = append(ignore, tag.Ignore...)
+					}
 				}
+				if !hasMelt {
+					meltColHdgs = []string{}
+				}
+				meltColHdgs = getMeltCols(r, lclColMap, ignore, hasIntCols, intColHdgs)
 				return nil
 			}
 			// any other special first row code here
@@ -145,7 +196,7 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 		// create the new item to add to the database
 		dbRecordPtr := reflect.New(modelTyp)
 
-		if hasIntCols {
+		if hasIntCols && !hasMelt {
 			for _, intColHdg := range intColHdgs {
 				// create the new item to add to the database
 				dbRecordPtr = reflect.New(modelTyp)
@@ -183,9 +234,110 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 						case tag.HasColanme:
 							if lclColMap[tag.Colname] == 0 {
 								fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
-								// TODO - How to handle the error?
+								return fmt.Errorf("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
 							}
 							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType, params))
+						}
+					}
+				}
+				// add the record to the slice of records
+				objSlice = reflect.Append(objSlice, dbRecordPtr.Elem())
+			}
+
+		} else if hasMelt && !hasIntCols {
+			for _, meltColHdg := range meltColHdgs {
+				// create the new item to add to the database
+				dbRecordPtr = reflect.New(modelTyp)
+
+				// for each field in the model
+				for fldIx := 0; fldIx < modelNumFlds; fldIx++ {
+					fld := modelTyp.Field(fldIx)
+					fldName := fld.Name
+					fldType := fld.Type
+					tag, _ := parseTag(fld)
+
+					paramsCol := params.colMap[fldName]
+					if paramsCol >= r.Sheet.MaxCol {
+						log.Fatal("Column supplied in map is out of range")
+					}
+					// if a parameter column maps to the field
+					if paramsCol > 0 {
+						cell := r.GetCell(paramsCol - 1)
+						dbRecordPtr.Elem().Field(fldIx).Set(CellToType(cell, fldType, params))
+					} else {
+						switch {
+						case tag.IsMapConst:
+							constString := params.ConstMap[tag.ConstMapKey]
+							// trying to convert empty strings to numbers in csv_to_gorm will bomb!
+							if constString == "" && fldType.Name() != "string" {
+								return fmt.Errorf("tag constant: " + tag.ConstMapKey + " missing for sheet:  " + sh.Name + ". ")
+							} else {
+								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
+							}
+						case tag.IsMeltHead:
+							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType))
+						case tag.IsMeltValue:
+							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[meltColHdg]-1), fldType, params))
+						case tag.HasColanme:
+							if lclColMap[tag.Colname] == 0 {
+								fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
+								return fmt.Errorf("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
+							}
+							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType, params))
+						}
+					}
+				}
+				// add the record to the slice of records
+				// objArry.Index(recordIx).Set(reflect.ValueOf(dbRecordPtr.Elem().Interface()))
+				objSlice = reflect.Append(objSlice, dbRecordPtr.Elem())
+			}
+
+		} else if hasMelt && hasIntCols {
+			for _, meltColHdg := range meltColHdgs {
+				for _, intColHdg := range intColHdgs {
+					// create the new item to add to the database
+					dbRecordPtr = reflect.New(modelTyp)
+
+					// for each field in the model
+					for fldIx := 0; fldIx < modelNumFlds; fldIx++ {
+						fld := modelTyp.Field(fldIx)
+						fldName := fld.Name
+						fldType := fld.Type
+						tag, _ := parseTag(fld)
+
+						paramsCol := params.colMap[fldName]
+						if paramsCol >= r.Sheet.MaxCol {
+							log.Fatal("Column supplied in map is out of range")
+						}
+						// if a parameter column maps to the field
+						if paramsCol > 0 {
+							cell := r.GetCell(paramsCol - 1)
+							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(cell, fldType, params))
+						} else {
+							switch {
+							case tag.IsMapConst:
+								constString := params.ConstMap[tag.ConstMapKey]
+								// trying to convert empty strings to numbers in csv_to_gorm will bomb!
+								if constString == "" && fldType.Name() != "string" {
+									return fmt.Errorf("tag constant: " + tag.ConstMapKey + " missing for sheet:  " + sh.Name + ". ")
+								} else {
+									dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
+								}
+							case tag.IsIntColsHead:
+								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType))
+							case tag.IsIntColsValue:
+								dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[meltColHdg]-1), fldType, params))
+							case tag.IsIntColsHead:
+								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(intColHdg, fldType))
+							case tag.IsIntColsValue:
+								dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[intColHdg]-1), fldType, params))
+							case tag.HasColanme:
+								if lclColMap[tag.Colname] == 0 {
+									fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
+									return fmt.Errorf("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
+								}
+								dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType, params))
+							}
 						}
 					}
 				}
@@ -297,6 +449,38 @@ func getIntCols(r *xlsx.Row) []string {
 		return nil
 	})
 	return intCols
+}
+
+func getMeltCols(r *xlsx.Row, colMap map[string]int, ignoreHdgs []string, hasIntCols bool, intColHdgs []string) []string {
+	var definedCols []string
+	var meltCols []string
+	r.ForEachCell(func(c *xlsx.Cell) error {
+		for definedCol := range colMap {
+			definedCols = append(definedCols, definedCol)
+		}
+		// check if column heading is
+		heading := c.String()
+		if heading == "" {
+			return nil
+		}
+		_, isDefined := find(definedCols, heading)
+		if isDefined {
+			return nil
+		}
+		_, isIgnored := find(ignoreHdgs, heading)
+		if isIgnored {
+			return nil
+		}
+		_, isIntCol := find(intColHdgs, heading)
+		if isIntCol && hasIntCols {
+			return nil
+		}
+
+		// if we've not exited by now, we are a melt column
+		meltCols = append(meltCols, heading)
+		return nil
+	})
+	return meltCols
 }
 
 func GetSheetNames(fileName string) ([]string, error) {
@@ -417,4 +601,15 @@ func CellToType(c *xlsx.Cell, outType reflect.Type, params Params) reflect.Value
 
 	}
 	return reflect.ValueOf(errors.New("CellToType could not convert type " + outType.Name()))
+}
+
+// Find takes a slice and looks for an element in it. If found it will
+// return it's key, otherwise it will return -1 and a bool of false.
+func find(slice []string, val string) (int, bool) {
+	for i, item := range slice {
+		if item == val {
+			return i, true
+		}
+	}
+	return -1, false
 }
