@@ -4,6 +4,8 @@ go 1.16
 
 require (
 	github.com/c4rnot/csv_to_gorm v0.0.1-beta
-	//github.com/tealeg/xlsx/v3 v3.2.3
-	github.com/c4rnot/xlsx/v3 v3.2.4-beta-3
+	github.com/frankban/quicktest v1.11.2 // indirect
+	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
+	github.com/tealeg/xlsx/v3 v3.2.3
+	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect
 )
