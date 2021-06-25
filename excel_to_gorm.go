@@ -147,6 +147,7 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 
 	// map of column headings to 1 based column numbers (for consistency with csv_to_gorm)
 	var lclColMap map[string]int
+	var definedCols []string
 	var hasIntCols bool
 	var intColHdgs []string
 	var hasMelt bool
@@ -172,7 +173,7 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 				// check if there is an intcol tag, as a db entry has to be made for each int col
 				for fldIx := 0; fldIx < modelNumFlds; fldIx++ {
 					tag, err := parseTag(modelTyp.Field(fldIx))
-					fmt.Println(modelTyp.Field(fldIx).Name, tag)
+					//fmt.Println(modelTyp.Field(fldIx).Name, tag)
 					if err != nil {
 						return fmt.Errorf("could not parse tag for sheetname:  "+sh.Name+". ", err)
 					}
@@ -185,11 +186,23 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 					if len(tag.Ignore) > 0 {
 						ignore = append(ignore, tag.Ignore...)
 					}
+					if tag.HasColanme {
+						definedCols = append(definedCols, tag.Colname)
+					}
+				}
+				if hasMelt {
+					fmt.Println(modelTyp.Name(), "Has Melt")
+				}
+				if hasIntCols {
+					fmt.Println(modelTyp.Name(), "Has Integer Columns")
 				}
 				if !hasMelt {
 					meltColHdgs = []string{}
+				} else {
+					meltColHdgs = getMeltCols(r, params.ColMap, definedCols, ignore, hasIntCols, intColHdgs)
 				}
-				meltColHdgs = getMeltCols(r, lclColMap, ignore, hasIntCols, intColHdgs)
+				fmt.Println("Integer Column Headings", intColHdgs)
+				fmt.Println("Melt Column Headings", meltColHdgs)
 				return nil
 			}
 			// any other special first row code here
@@ -456,16 +469,20 @@ func getIntCols(r *xlsx.Row) []string {
 	return intCols
 }
 
-func getMeltCols(r *xlsx.Row, colMap map[string]int, ignoreHdgs []string, hasIntCols bool, intColHdgs []string) []string {
-	var definedCols []string
+func getMeltCols(r *xlsx.Row, colMap map[string]int, definedCols []string, ignoreHdgs []string, hasIntCols bool, intColHdgs []string) []string {
+	var mappedCols []string
 	var meltCols []string
 	r.ForEachCell(func(c *xlsx.Cell) error {
-		for definedCol := range colMap {
-			definedCols = append(definedCols, definedCol)
+		for mappedCol := range colMap {
+			mappedCols = append(mappedCols, mappedCol)
 		}
 		// check if column heading is
 		heading := c.String()
 		if heading == "" {
+			return nil
+		}
+		_, isMapped := find(mappedCols, heading)
+		if isMapped {
 			return nil
 		}
 		_, isDefined := find(definedCols, heading)
