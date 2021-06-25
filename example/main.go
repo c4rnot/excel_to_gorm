@@ -150,7 +150,7 @@ func main() {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	db.Model(&PestLoss{}).Create(pestLosses) //FAIL
+	db.Model(&PestLoss{}).Create(pestLosses) //PASS
 
 	params = excel_to_gorm.Params{
 		FirstRowHasData: false,
