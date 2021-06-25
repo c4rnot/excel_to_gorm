@@ -58,6 +58,8 @@ func parseTag(field reflect.StructField) (Tag, error) {
 	if !ok || value == "" {
 		tag.HasTag = false
 		return tag, nil
+	} else {
+		tag.HasTag = true
 	}
 	subTags := strings.Split(value, ",")
 
@@ -105,7 +107,6 @@ func parseTag(field reflect.StructField) (Tag, error) {
 			ignoreStrings := strings.Split(subTagElements[1], ";")
 			tag.Ignore = ignoreStrings
 		}
-
 	}
 	return tag, nil
 }
@@ -171,6 +172,7 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 				// check if there is an intcol tag, as a db entry has to be made for each int col
 				for fldIx := 0; fldIx < modelNumFlds; fldIx++ {
 					tag, err := parseTag(modelTyp.Field(fldIx))
+					fmt.Println(modelTyp.Field(fldIx).Name, tag)
 					if err != nil {
 						return fmt.Errorf("could not parse tag for sheetname:  "+sh.Name+". ", err)
 					}
@@ -246,6 +248,7 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 
 		} else if hasMelt && !hasIntCols {
 			for _, meltColHdg := range meltColHdgs {
+				fmt.Println("Melt Col Heading: " + meltColHdg)
 				// create the new item to add to the database
 				dbRecordPtr = reflect.New(modelTyp)
 
@@ -275,8 +278,10 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
 							}
 						case tag.IsMeltHead:
+							fmt.Println(meltColHdg + " is a melt heading")
 							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType))
 						case tag.IsMeltValue:
+							fmt.Println(r.GetCell(lclColMap[meltColHdg]-1).String() + " is a melt value")
 							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[meltColHdg]-1), fldType, params))
 						case tag.HasColanme:
 							if lclColMap[tag.Colname] == 0 {
