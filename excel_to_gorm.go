@@ -44,7 +44,7 @@ type Tag struct {
 }
 
 type Params struct {
-	colMap          map[string]int    // maps fieldnames to column numbers(starting at 1).  Overrides tagnames if mapping present
+	ColMap          map[string]int    // maps fieldnames to column numbers(starting at 1).  Overrides tagnames if mapping present
 	ConstMap        map[string]string // maps from tagname mapConst:Mapfrom to a string constant to be parsed into the field
 	FirstRowHasData bool
 	ErrorOnNaN      bool
@@ -208,9 +208,9 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 					fldType := fld.Type
 					tag, _ := parseTag(fld)
 
-					paramsCol := params.colMap[fldName]
+					paramsCol := params.ColMap[fldName]
 					//lclCol := lclColMap
-					if paramsCol >= r.Sheet.MaxCol {
+					if paramsCol > r.Sheet.MaxCol {
 						log.Fatal("Column supplied in map is out of range")
 					}
 					// if a parameter column maps to the field
@@ -256,8 +256,8 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 					fldType := fld.Type
 					tag, _ := parseTag(fld)
 
-					paramsCol := params.colMap[fldName]
-					if paramsCol >= r.Sheet.MaxCol {
+					paramsCol := params.ColMap[fldName]
+					if paramsCol > r.Sheet.MaxCol {
 						log.Fatal("Column supplied in map is out of range")
 					}
 					// if a parameter column maps to the field
@@ -305,8 +305,8 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 						fldType := fld.Type
 						tag, _ := parseTag(fld)
 
-						paramsCol := params.colMap[fldName]
-						if paramsCol >= r.Sheet.MaxCol {
+						paramsCol := params.ColMap[fldName]
+						if paramsCol > r.Sheet.MaxCol {
 							log.Fatal("Column supplied in map is out of range")
 						}
 						// if a parameter column maps to the field
@@ -354,9 +354,9 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 				fldType := fld.Type
 				tag, _ := parseTag(fld)
 
-				paramsCol := params.colMap[fldName]
+				paramsCol := params.ColMap[fldName]
 				//lclCol := lclColMap
-				if paramsCol >= r.Sheet.MaxCol {
+				if paramsCol > r.Sheet.MaxCol {
 					log.Fatal("Column supplied in map is out of range")
 				}
 				// if a parameter column maps to the field
