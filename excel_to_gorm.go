@@ -159,7 +159,6 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 	modelNumFlds := modelTyp.NumField()
 
 	// make an empty slice to hold the records to be uploaded to the db.
-
 	objSlice := reflect.Zero(reflect.SliceOf(modelTyp))
 
 	err := sh.ForEachRow(func(r *xlsx.Row) error {
@@ -173,7 +172,6 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 				// check if there is an intcol tag, as a db entry has to be made for each int col
 				for fldIx := 0; fldIx < modelNumFlds; fldIx++ {
 					tag, err := parseTag(modelTyp.Field(fldIx))
-					//fmt.Println(modelTyp.Field(fldIx).Name, tag)
 					if err != nil {
 						return fmt.Errorf("could not parse tag for sheetname:  "+sh.Name+". ", err)
 					}
@@ -190,22 +188,14 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 						definedCols = append(definedCols, tag.Colname)
 					}
 				}
-				if hasMelt {
-					fmt.Println(modelTyp.Name(), "Has Melt")
-				}
-				if hasIntCols {
-					fmt.Println(modelTyp.Name(), "Has Integer Columns")
-				}
 				if !hasMelt {
 					meltColHdgs = []string{}
 				} else {
 					meltColHdgs = getMeltCols(r, params.ColMap, definedCols, ignore, hasIntCols, intColHdgs)
 				}
-				fmt.Println("Integer Column Headings", intColHdgs)
-				fmt.Println("Melt Column Headings", meltColHdgs)
 				return nil
 			}
-			// any other special first row code here
+			// any other special first row code for case where where data is in first row here
 		}
 
 		// create the new item to add to the database
@@ -261,7 +251,6 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 
 		} else if hasMelt && !hasIntCols {
 			for _, meltColHdg := range meltColHdgs {
-				fmt.Println("Melt Col Heading: " + meltColHdg)
 				// create the new item to add to the database
 				dbRecordPtr = reflect.New(modelTyp)
 
@@ -291,10 +280,8 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
 							}
 						case tag.IsMeltHead:
-							fmt.Println(meltColHdg + " is a melt heading")
 							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType))
 						case tag.IsMeltValue:
-							fmt.Println(r.GetCell(lclColMap[meltColHdg]-1).String() + " is a melt value")
 							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[meltColHdg]-1), fldType, params))
 						case tag.HasColanme:
 							if lclColMap[tag.Colname] == 0 {
@@ -311,8 +298,8 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 			}
 
 		} else if hasMelt && hasIntCols {
-			for _, meltColHdg := range meltColHdgs {
-				for _, intColHdg := range intColHdgs {
+			for _, intColHdg := range intColHdgs {
+				for _, meltColHdg := range meltColHdgs {
 					// create the new item to add to the database
 					dbRecordPtr = reflect.New(modelTyp)
 
@@ -341,9 +328,9 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 								} else {
 									dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
 								}
-							case tag.IsIntColsHead:
+							case tag.IsMeltHead:
 								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType))
-							case tag.IsIntColsValue:
+							case tag.IsMeltValue:
 								dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[meltColHdg]-1), fldType, params))
 							case tag.IsIntColsHead:
 								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(intColHdg, fldType))
@@ -358,10 +345,10 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 							}
 						}
 					}
+					// add the record to the slice of records
+					// objArry.Index(recordIx).Set(reflect.ValueOf(dbRecordPtr.Elem().Interface()))
+					objSlice = reflect.Append(objSlice, dbRecordPtr.Elem())
 				}
-				// add the record to the slice of records
-				// objArry.Index(recordIx).Set(reflect.ValueOf(dbRecordPtr.Elem().Interface()))
-				objSlice = reflect.Append(objSlice, dbRecordPtr.Elem())
 			}
 
 		} else {
@@ -394,7 +381,7 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 					case tag.HasColanme:
 						if lclColMap[tag.Colname] == 0 {
 							fmt.Println("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
-							// TODO - How to handle the error?
+							return fmt.Errorf("Could not find column header " + tag.Colname + " in sheet: " + sh.Name)
 						}
 						dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[tag.Colname]-1), fldType, params))
 					}
@@ -542,7 +529,6 @@ func CellToType(c *xlsx.Cell, outType reflect.Type, params Params) reflect.Value
 		return reflect.ValueOf(cellString)
 	case reflect.Bool:
 		cellString = c.Value
-		//fmt.Println("Step a: bool")
 		var firstLetter string
 		if len(cellString) < 1 {
 			firstLetter = ""

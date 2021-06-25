@@ -60,8 +60,8 @@ type PestLoss struct {
 }
 
 type BiggestExporter struct {
-	gorm.Model      // include ID, CretedAt, UpdatedAt, DeletedAt
-	Country         string
+	gorm.Model             // include ID, CretedAt, UpdatedAt, DeletedAt
+	Country         string `xtg:"col:country"`
 	Type            string `xtg:"melt:colname"`
 	ExportCode      int    `xtg:"melt:value"`
 	Year            int    `xtg:"intcols:colname"`
@@ -155,7 +155,7 @@ func main() {
 	params = excel_to_gorm.Params{
 		FirstRowHasData: false,
 	}
-	sh, ok = wb.Sheet["melt-pest-losses"]
+	sh, ok = wb.Sheet["intcols-melt-biggest exporters"]
 	if !ok {
 		fmt.Println("Could not open sheet: melt-pest-losses")
 	}
@@ -164,6 +164,6 @@ func main() {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	db.Model(&BiggestExporter{}).Create(biggestExporters) // FAIL
+	db.Model(&BiggestExporter{}).Create(biggestExporters) // PASS
 
 }
