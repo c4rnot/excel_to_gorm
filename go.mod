@@ -3,7 +3,7 @@ module github.com/c4rnot/excel_to_gorm
 go 1.16
 
 require (
-	github.com/c4rnot/csv_to_gorm v0.0.1-beta
+	github.com/c4rnot/csv_to_gorm v0.0.3
 	github.com/frankban/quicktest v1.11.2 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/tealeg/xlsx/v3 v3.2.3

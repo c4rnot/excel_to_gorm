@@ -153,6 +153,9 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 	var hasMelt bool
 	var meltColHdgs []string
 	var ignore []string
+	var csvParams csv_to_gorm.Params
+
+	CopyIdenticalFields(params, &csvParams)
 
 	// determine what type of model we are trying to fill records of
 	modelTyp := reflect.ValueOf(model).Elem().Type()
@@ -230,10 +233,10 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 							if constString == "" && fldType.Name() != "string" {
 								return fmt.Errorf("tag constant: " + tag.ConstMapKey + " missing for sheet:  " + sh.Name + ". ")
 							} else {
-								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
+								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType, csvParams))
 							}
 						case tag.IsIntColsHead:
-							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(intColHdg, fldType))
+							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(intColHdg, fldType, csvParams))
 						case tag.IsIntColsValue:
 							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[intColHdg]-1), fldType, params))
 						case tag.HasColanme:
@@ -277,10 +280,10 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 							if constString == "" && fldType.Name() != "string" {
 								return fmt.Errorf("tag constant: " + tag.ConstMapKey + " missing for sheet:  " + sh.Name + ". ")
 							} else {
-								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
+								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType, csvParams))
 							}
 						case tag.IsMeltHead:
-							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType))
+							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType, csvParams))
 						case tag.IsMeltValue:
 							dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[meltColHdg]-1), fldType, params))
 						case tag.HasColanme:
@@ -326,14 +329,14 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 								if constString == "" && fldType.Name() != "string" {
 									return fmt.Errorf("tag constant: " + tag.ConstMapKey + " missing for sheet:  " + sh.Name + ". ")
 								} else {
-									dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
+									dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType, csvParams))
 								}
 							case tag.IsMeltHead:
-								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType))
+								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(meltColHdg, fldType, csvParams))
 							case tag.IsMeltValue:
 								dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[meltColHdg]-1), fldType, params))
 							case tag.IsIntColsHead:
-								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(intColHdg, fldType))
+								dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(intColHdg, fldType, csvParams))
 							case tag.IsIntColsValue:
 								dbRecordPtr.Elem().Field(fldIx).Set(CellToType(r.GetCell(lclColMap[intColHdg]-1), fldType, params))
 							case tag.HasColanme:
@@ -376,7 +379,7 @@ func WorksheetToSlice(sh *xlsx.Sheet, model interface{}, params Params) (interfa
 						if constString == "" && fldType.Name() != "string" {
 							return fmt.Errorf("tag constant: " + tag.ConstMapKey + " missing for sheet:  " + sh.Name + ". ")
 						} else {
-							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType))
+							dbRecordPtr.Elem().Field(fldIx).Set(csv_to_gorm.StringToType(constString, fldType, csvParams))
 						}
 					case tag.HasColanme:
 						if lclColMap[tag.Colname] == 0 {
@@ -620,4 +623,30 @@ func find(slice []string, val string) (int, bool) {
 		}
 	}
 	return -1, false
+}
+
+// copies data  from a to b between different structs where the field names are identical
+// eg. where the API fields are a subset of the database fields
+// example usage:
+// api.SomeInterface := some data
+// var models.SomeInterface
+// CopyIdenticalFields()
+func CopyIdenticalFields(copyFrom, copyInto interface{}) {
+	av := reflect.ValueOf(copyFrom)
+	bv := reflect.ValueOf(copyInto).Elem()
+
+	at := av.Type()
+	bt := bv.Type()
+	for i := 0; i < at.NumField(); i++ {
+		name := at.Field(i).Name
+		fieldType := at.Field(i).Type.Name()
+
+		bField, found := bt.FieldByName(name)
+		if found {
+			bf := bv.FieldByName(name)
+			if bf.IsValid() && (bField.Type.Name() == fieldType) {
+				bf.Set(av.Field(i))
+			}
+		}
+	}
 }
